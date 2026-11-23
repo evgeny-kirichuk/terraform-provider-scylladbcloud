@@ -963,8 +963,13 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.Errorf("failed to create a cluster request: %s", err)
 	}
 
+	// Save the ID before the wait. If a later step fails, Terraform keeps the
+	// cluster in state as tainted, and the next apply replaces it.
+	d.SetId(strconv.FormatInt(cr.ClusterID, 10))
+	_ = d.Set("request_id", cr.ID)
+
 	if err := WaitForClusterRequestID(ctx, scyllaClient, cr.ID); err != nil {
-		return diag.Errorf("failed to wait for request %d creating cluster %d: %s", cr.ID, cr.ClusterID, err)
+		return append(warns, diag.Errorf("failed to wait for request %d creating cluster %d: %s", cr.ID, cr.ClusterID, err)...)
 	}
 
 	cluster, err := scyllaClient.GetCluster(ctx, cr.ClusterID)
@@ -996,9 +1001,6 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.Errorf("failed to set cluster values for cluster %d: %s", cluster.ID, err)
 	}
 
-	d.SetId(strconv.Itoa(int(cr.ClusterID)))
-	_ = d.Set("request_id", cr.ID)
-
 	return warns
 }
 
@@ -1026,9 +1028,13 @@ func resourceClusterRead(ctx context.Context, d *schema.ResourceData, meta inter
 	}
 	_ = d.Set("request_id", reqs[0].ID)
 
-	if reqs[0].Status != "COMPLETED" {
-		if err := WaitForClusterRequestID(ctx, scyllaClient, reqs[0].ID); err != nil {
+	if !reqs[0].Completed() {
+		r, err := scyllaClient.WaitClusterRequestEnd(ctx, reqs[0].ID)
+		if err != nil {
 			return diag.Errorf("failed to wait for cluster request %d: %s", reqs[0].ID, err)
+		}
+		if r.Failed() {
+			return failedCreateDiags(d, r)
 		}
 	}
 
@@ -1070,6 +1076,23 @@ func resourceClusterRead(ctx context.Context, d *schema.ResourceData, meta inter
 	}
 
 	return warns
+}
+
+// failedCreateStatus is the status Read stores for a cluster whose create
+// request failed.
+const failedCreateStatus = "CREATE_FAILED"
+
+// failedCreateDiags keeps a cluster whose create request failed in state
+// without an error, so that plan and destroy still work.
+func failedCreateDiags(d *schema.ResourceData, r model.ClusterRequest) diag.Diagnostics {
+	_ = d.Set("status", failedCreateStatus)
+	return diag.Diagnostics{{
+		Severity: diag.Warning,
+		Summary:  fmt.Sprintf("The create request of cluster %d failed", r.ClusterID),
+		Detail: fmt.Sprintf("Cluster request ID %d failed (%s at %d%%): %s\n\n"+
+			"Destroy or replace this cluster.",
+			r.ID, r.RequestType, r.ProgressPercent, r.ProgressDescription),
+	}}
 }
 
 // fetchCACertificate retrieves the cluster's CA certificate. Clusters without
