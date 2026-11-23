@@ -99,7 +99,7 @@ func ResourceClusterConnection() *schema.Resource {
 				Default:     "ACTIVE",
 				ValidateDiagFunc: func(i interface{}, s cty.Path) diag.Diagnostics {
 					status := i.(string)
-					if status != "ACTIVE" && status != "INACTIVE " {
+					if status != "ACTIVE" && status != "INACTIVE" {
 						return diag.Errorf("status must be one of: ACTIVE or INACTIVE")
 					}
 					return nil
