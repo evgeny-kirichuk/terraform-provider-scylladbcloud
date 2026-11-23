@@ -393,7 +393,7 @@ func TestAccScyllaDBCloudCluster_scaleOutFromOutside(t *testing.T) {
 					req, err := client.ResizeCluster(ctx, cluster.ID, cluster.Datacenter.ID, cluster.Datacenter.InstanceID, 6)
 					require.NoError(t, err)
 
-					err = providercluster.WaitForClusterRequestID(ctx, client, req.ID)
+					err = client.AwaitClusterRequest(ctx, req.ID)
 					require.NoError(t, err)
 				},
 				RefreshState: true,
