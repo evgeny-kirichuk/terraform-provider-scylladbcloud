@@ -1,0 +1,3 @@
+```release-note:bug
+resource/scylladbcloud_cluster_connection: `status = "INACTIVE"` is accepted. Before, the check expected `"INACTIVE "` with a trailing space. A config with that old value now fails at plan instead of at apply
+```
